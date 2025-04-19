@@ -1,0 +1,16 @@
+-std=gnu++2b
+-DATCODERDEBUG
+-Wall
+-Wextra
+-O2 
+-DONLINE_JUDGE
+-mtune=native
+-march=native
+-fconstexpr-depth=2147483647
+-fconstexpr-steps=2147483647
+-I/opt/boost/clang/include
+-L/opt/boost/clang/lib
+-I/opt/ac-library
+-I/usr/include/eigen3
+-fuse-ld=lld 
+-I/home/moritanian/project/atcoder/lib/ac-library
