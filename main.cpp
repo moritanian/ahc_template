@@ -506,6 +506,8 @@ template <typename T> struct Vec2 {
   Vec2 operator-() const { return Vec2(-x, -y); }
   Vec2 operator*(const T &s) const { return Vec2(x * s, y * s); }
   Vec2 operator/(const T &s) const { return Vec2(x / s, y / s); }
+  bool operator==(const Vec2 &v) const { return (x == v.x && y == v.y); }
+  bool operator!=(const Vec2 &v) const { return (x != v.x || y != v.y); }
   T dot(const Vec2 &v) const { return x * v.x + y * v.y; }
   Mat2_2<T> outer_product(const Vec2 &v) const {
     return Mat2_2<T>{Vec2<T>{x * v.x, y * v.x}, Vec2<T>{x * v.y, y * v.y}};
@@ -586,7 +588,7 @@ Unit Phi(Unit x) { return 0.5 * (1.0 + std::erf(x / std::sqrt(2.0))); }
 auto time_keeper = TimeKeeper(1920);
 
 struct Solution {
-  Unit score = 0;
+  int score = 0;
 };
 struct Solver {
 
@@ -718,6 +720,8 @@ int main() {
   Solution sol;
 
   solver.solve(sol);
+
+  cerr << "Score = " << sol.score << endl;
 
   // INFO_LOG("!D!", M);
   // INFO_LOG("!D!", L);
