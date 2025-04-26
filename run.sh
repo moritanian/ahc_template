@@ -51,8 +51,8 @@ function run() {
     i=${1:3:4}
 
     _started_at=$(date +'%s.%3N')
-    #if ! bash -c "./../$bin <in/${i}.txt" 1>out/"${i}".txt 2>err/"${i}".txt; then
-    if ! bash -c "cargo run -r --bin tester ./../${bin} <in/${i}.txt >out/${i}.txt 2>err/${i}.txt"; then
+    if ! bash -c "./../$bin <in/${i}.txt" 1>out/"${i}".txt 2>err/"${i}".txt; then
+        # if ! bash -c "cargo run -r --bin tester ./../${bin} <in/${i}.txt >out/${i}.txt 2>err/${i}.txt"; then
         echo "Error" $i
         return
     fi
