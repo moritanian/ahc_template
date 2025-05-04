@@ -505,12 +505,27 @@ template <typename T> struct Vec2 {
   }
   Vec2 operator-() const { return Vec2(-x, -y); }
   Vec2 operator*(const T &s) const { return Vec2(x * s, y * s); }
+  Vec2 operator*=(const T &s) {
+    x *= s;
+    y *= s;
+    return *this;
+  }
   Vec2 operator/(const T &s) const { return Vec2(x / s, y / s); }
+  Vec2 operator/=(const T &s) {
+    x /= s;
+    y /= s;
+    return *this;
+  }
   bool operator==(const Vec2 &v) const { return (x == v.x && y == v.y); }
   bool operator!=(const Vec2 &v) const { return (x != v.x || y != v.y); }
   T dot(const Vec2 &v) const { return x * v.x + y * v.y; }
   Mat2_2<T> outer_product(const Vec2 &v) const {
     return Mat2_2<T>{Vec2<T>{x * v.x, y * v.x}, Vec2<T>{x * v.y, y * v.y}};
+  }
+  T norm() const { return std::sqrt(x * x + y * y); }
+  void normalize() {
+    auto length = norm();
+    *this /= length;
   }
 };
 template <typename T> ostream &operator<<(ostream &os, const Vec2<T> &v) {
