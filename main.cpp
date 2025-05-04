@@ -518,6 +518,14 @@ template <typename T> struct Vec2 {
   }
   bool operator==(const Vec2 &v) const { return (x == v.x && y == v.y); }
   bool operator!=(const Vec2 &v) const { return (x != v.x || y != v.y); }
+  bool operator<(const Vec2 &v) const {
+    if (x != v.x)
+      return x < v.x;
+    return y < v.y;
+  }
+  bool operator>(const Vec2 &v) const { return v < *this; }
+  bool operator<=(const Vec2 &v) const { return !(v < *this); }
+  bool operator>=(const Vec2 &v) const { return !(*this < v); }
   T dot(const Vec2 &v) const { return x * v.x + y * v.y; }
   Mat2_2<T> outer_product(const Vec2 &v) const {
     return Mat2_2<T>{Vec2<T>{x * v.x, y * v.x}, Vec2<T>{x * v.y, y * v.y}};
