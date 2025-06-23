@@ -23,64 +23,21 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-/*
-#include <atcoder/all>
-template <int m, std::enable_if_t<(1 <= m)> * = nullptr>
-ostream &operator<<(ostream &os, const atcoder::static_modint<m> &v) {
-  os << v.val();
-  return os;
-}
-*/
-
-/*
-cd $dir && g++ -std=c++17 -Wall -Wextra -O2 -DATCODERDEBUG
--I/home/moritanian/projects/atcoder/lib/ac-library $fileName && \
- echo 'compilation ok!'
-&&  ./a.out
-*/
 
 using namespace std;
 #define REP(i, n) for (ll i = 0; i < ll(n); i++)
 #define FOR(i, a, b) for (ll i = a; i <= ll(b); i++)
 #define ALL(x) x.begin(), x.end()
-#define dame(a)                                                                \
-  {                                                                            \
-    cout << a << endl;                                                         \
-    return 0;                                                                  \
-  }
+
 typedef long long ll;
 typedef unsigned long long ull;
 
-ll __per__(ll a, ll b) {
-  if (a >= 0)
-    return a % b;
-  return (((-a - 1LL) / b) + 1LL) * b + a;
-}
-
-class dstream : private std::streambuf, public ostream {
-public:
-  dstream() : std::ostream(this) {}
-  dstream &operator<<(__attribute__((unused))
-                      ostream &(*endl)(std::ostream &out)) {
-#ifdef ATCODERDEBUG
-    cerr << endl;
-#endif
-    return *this;
-  }
-};
-
-dstream dout;
-
-template <typename T> dstream &operator<<(dstream &os, const T &v);
 template <typename T> ostream &operator<<(ostream &os, const vector<T> &v);
 ostream &operator<<(ostream &os, const vector<bool> &v);
-// template <typename T>
-// ostream &operator<<(ostream &os, const vector<vector<T>> &v);
 template <typename T, typename U>
 ostream &operator<<(ostream &os, const map<T, U> &v);
 template <typename T, typename U>
@@ -88,26 +45,11 @@ ostream &operator<<(ostream &os, const unordered_map<T, U> &v);
 template <typename T, typename U>
 ostream &operator<<(ostream &os, const multimap<T, U> &v);
 template <typename T> ostream &operator<<(ostream &os, const set<T> &v);
-
 template <typename T>
 ostream &operator<<(ostream &os, const unordered_set<T> &v);
 template <typename T> ostream &operator<<(ostream &os, const multiset<T> &v);
-template <class tTuple, std::size_t... indices>
-void _print_tuple(ostream &os, tTuple const &iTuple,
-                  std::index_sequence<indices...>);
 template <typename T, typename U>
 ostream &operator<<(ostream &os, const pair<T, U> &v);
-template <class... ARGS>
-ostream &operator<<(ostream &os, const tuple<ARGS...> &v);
-template <typename T> ostream &operator<<(ostream &os, priority_queue<T> v);
-template <typename T> ostream &operator<<(ostream &os, queue<T> v);
-
-template <typename T> dstream &operator<<(dstream &os, const T &v) {
-#ifdef ATCODERDEBUG
-  cerr << "\033[1;31m" << v << "\033[0m";
-#endif
-  return os;
-}
 
 template <typename T> ostream &operator<<(ostream &os, const vector<T> &v) {
   os << "[ ";
@@ -132,80 +74,44 @@ ostream &operator<<(ostream &os, const vector<bool> &v) {
   os << " ]";
   return os;
 }
-/*
-template <typename T>
-ostream &operator<<(ostream &os, const vector<vector<T>> &v) {
-  os << "[";
+
+// 汎用的なコンテナ出力ヘルパー
+template <typename Container>
+void print_container(ostream &os, const Container &v, const string &open = "{",
+                     const string &close = " }") {
+  os << open;
   for (auto const &x : v) {
-    os << " ";
-    os << x;
+    os << " " << x;
   }
-  os << "]";
-  return os;
+  os << close;
 }
-*/
 
 template <typename T, typename U>
 ostream &operator<<(ostream &os, const map<T, U> &v) {
-  os << "{";
-  for (auto const &x : v) {
-    os << " ";
-    os << x;
-  }
-  os << "}";
+  print_container(os, v, "{", "}");
   return os;
 }
-
 template <typename T, typename U>
 ostream &operator<<(ostream &os, const unordered_map<T, U> &v) {
-  os << "{";
-  for (auto const &x : v) {
-    os << " ";
-    os << x;
-  }
-  os << "}";
+  print_container(os, v, "{", "}");
   return os;
 }
-
 template <typename T, typename U>
 ostream &operator<<(ostream &os, const multimap<T, U> &v) {
-  os << "{";
-  for (auto const &x : v) {
-    os << " ";
-    os << x;
-  }
-  os << "}";
+  print_container(os, v, "{", "}");
   return os;
 }
-
 template <typename T> ostream &operator<<(ostream &os, const set<T> &v) {
-  os << "{";
-  for (auto const &x : v) {
-    os << " ";
-    os << x;
-  }
-  os << " }";
+  print_container(os, v);
   return os;
 }
-
 template <typename T>
 ostream &operator<<(ostream &os, const unordered_set<T> &v) {
-  os << "{";
-  for (auto const &x : v) {
-    os << " ";
-    os << x;
-  }
-  os << " }";
+  print_container(os, v);
   return os;
 }
-
 template <typename T> ostream &operator<<(ostream &os, const multiset<T> &v) {
-  os << "{";
-  for (auto const &x : v) {
-    os << " ";
-    os << x;
-  }
-  os << " }";
+  print_container(os, v);
   return os;
 }
 
@@ -215,53 +121,11 @@ ostream &operator<<(ostream &os, const pair<T, U> &v) {
   return os;
 }
 
-template <class tTuple, std::size_t... indices>
-void _print_tuple(ostream &os, tTuple const &iTuple,
-                  std::index_sequence<indices...>) {
-  using swallow = int[];
-  os << "[ ";
-  (void)swallow{(os << std::get<indices>(iTuple) << " , ", 0)...};
-  os << " ]";
-}
-
-template <class... ARGS>
-ostream &operator<<(ostream &os, const tuple<ARGS...> &v) {
-  constexpr size_t N = tuple_size<tuple<ARGS...>>::value;
-  _print_tuple(os, v, std::make_index_sequence<N>{});
-  return os;
-}
-
-template <typename T> ostream &operator<<(ostream &os, priority_queue<T> v) {
-  os << "[";
-  while (!v.empty()) {
-    os << v.top();
-    v.pop();
-    if (!v.empty()) {
-      os << ", ";
-    }
-  }
-  os << "]";
-  return os;
-}
-
-template <typename T> ostream &operator<<(ostream &os, queue<T> v) {
-  os << "[";
-  while (!v.empty()) {
-    os << v.front();
-    v.pop();
-    if (!v.empty()) {
-      os << ", ";
-    }
-  }
-  os << "]";
-  return os;
-}
-
 void to_strstream(stringstream & /*ss*/) {}
 template <class Head, class... Remain>
 void to_strstream(stringstream &ss, Head &&head, Remain &&...remain) {
   ss << head << " ";
-  to_strstream(ss, forward<Remain>(remain)...);
+  to_strstream(ss, std::forward<Remain>(remain)...);
 }
 
 #ifdef ATCODERDEBUG
@@ -313,34 +177,6 @@ bool chmin(T &xmin, const U &x, Comp comp = {}) {
   return false;
 }
 
-ll log10ll(ll n) {
-  ll res = 0;
-  while (n >= 10) {
-    n /= 10LL;
-    res++;
-  }
-  return res;
-}
-
-struct UF {
-  vector<ll> data;
-  UF(ll size) : data(size, -1) {}
-  bool unite(ll x, ll y) {
-    x = root(x);
-    y = root(y);
-    if (x != y) {
-      if (-data[y] > -data[x])
-        swap(x, y);
-      data[x] += data[y];
-      data[y] = x;
-    }
-    return x != y;
-  }
-  bool findSet(ll x, ll y) { return root(x) == root(y); }
-  ll root(ll x) { return data[x] < 0 ? x : data[x] = root(data[x]); }
-  ll size(ll x) { return -data[root(x)]; }
-};
-
 const int IINF = 1012345678;
 namespace myrandom {
 uint64_t seed = 1234567891234567891;
@@ -363,41 +199,6 @@ inline double randf() {
 
 // generate v randomly that i1 <= v < i2
 inline int randi_range(int i1, int i2) { return myrandom::next_int(i1, i2); }
-
-int div_ceil(int a, int b) { return (a + b - 1) / b; }
-
-double sigmoid(double x) { return 1.0 / (1.0 + exp(-x)); }
-double abs_radian(double radian) {
-  while (radian < -M_PI)
-    radian += 2 * M_PI;
-  while (radian >= M_PI)
-    radian -= 2 * M_PI;
-  return abs(radian);
-}
-
-string get_env_string(const string &key, const string &default_value) {
-  const char *value = getenv(key.c_str());
-  if (value == nullptr) {
-    return default_value;
-  }
-  return string(value);
-}
-
-double get_env_double(const string &key, double default_value) {
-  const char *value = getenv(key.c_str());
-  if (value == nullptr) {
-    return default_value;
-  }
-  return atof(value);
-}
-
-int get_env_int(const string &key, int default_value) {
-  const char *value = getenv(key.c_str());
-  if (value == nullptr) {
-    return default_value;
-  }
-  return atoi(value);
-}
 
 struct TimeKeeper {
   struct RecordItem {
@@ -541,50 +342,6 @@ template <typename T> ostream &operator<<(ostream &os, const Vec2<T> &v) {
   return os;
 }
 
-template <typename T> struct Mat2_2 {
-  Vec2<T> a, b;
-  Mat2_2(const Vec2<T> &a, const Vec2<T> &b) : a(a), b(b) {}
-  Mat2_2() : a(), b() {}
-  Mat2_2 operator+(const Mat2_2 &m) const { return Mat2_2(a + m.a, b + m.b); }
-  Mat2_2 operator+=(const Mat2_2 &m) {
-    a += m.a;
-    b += m.b;
-    return *this;
-  }
-  Mat2_2 operator-(const Mat2_2 &m) const { return Mat2_2(a - m.a, b - m.b); }
-  Mat2_2 operator-=(const Mat2_2 &m) {
-    a -= m.a;
-    b -= m.b;
-    return *this;
-  }
-  Mat2_2 operator-() const { return Mat2_2(-a, -b); }
-
-  Mat2_2 operator*(const T &s) const { return Mat2_2(a * s, b * s); }
-  Mat2_2 operator/(const T &s) const { return Mat2_2(a / s, b / s); }
-
-  Vec2<T> dot(const Vec2<T> &v) const {
-    return Vec2<T>{a.x * v.x + b.x * v.y, a.y * v.x + b.y * v.y};
-  }
-  Mat2_2 dot(const Mat2_2 &m) const { return Mat2_2<T>{dot(m.a), dot(m.b)}; }
-
-  Mat2_2 inverse() const {
-    T _det = det();
-    if (_det == 0) {
-      DEBUG_LOG("det == 0!!!");
-      _det = EPSILON;
-    }
-    return Mat2_2<T>{Vec2<T>{b.y, -a.y}, Vec2<T>{-b.x, a.x}} / _det;
-  }
-
-  T trace() const { return a.x + b.y; }
-  T det() const { return a.x * b.y - a.y * b.x; }
-};
-
-template <typename T> ostream &operator<<(ostream &os, const Mat2_2<T> &m) {
-  os << "Mat2_2{" << m.a << "^T, " << m.b << "^T}";
-  return os;
-}
-
 using Unit = double;
 using Vec = Vec2<Unit>;
 using Pos = Vec2<int>;
@@ -595,18 +352,7 @@ int man_dist(const Pos &p1, const Pos &p2) {
   return abs(p1.x - p2.x) + abs(p1.y - p2.y);
 }
 // int pos2int(const Pos &p) { return p.first * N + p.second; }
-
 // Pos int2pos(int n) { return {n / N, n % N}; }
-
-namespace Gaussian {
-// 標準正規分布の確率密度関数
-Unit phi(Unit x) {
-  return (1.0 / std::sqrt(2.0 * M_PI)) * std::exp(-0.5 * x * x);
-}
-
-// 標準正規分布の累積分布関数
-Unit Phi(Unit x) { return 0.5 * (1.0 + std::erf(x / std::sqrt(2.0))); }
-} // namespace Gaussian
 
 auto time_keeper = TimeKeeper(1920);
 
@@ -615,115 +361,15 @@ struct Solution {
 };
 struct Solver {
 
-  double optimization_start_temp;
-  double optimization_end_temp;
-  Solver() {
-    optimization_start_temp = get_env_double("OPTIMIZATION_START_TEMP", 100.0);
-    optimization_end_temp = get_env_double("OPTIMIZATION_END_TEMP", 0.01);
-  }
+  double optimization_start_temp = 100.0;
+  double optimization_end_temp = 0.01;
+  Solver() {}
 
   void solve(Solution &sol) {}
 
-  void optimize(Solution &solution, double over_ratio = 1.0) {
-    INFO_LOG("# annealing", time_keeper.get_elapsed_ms(), "score",
-             solution.score);
+  void output(const Solution &sol) const {}
 
-    const double start_temp = optimization_start_temp;
-    const double end_temp = optimization_end_temp;
-
-    const double check_time_elapsed_ratio = 0.002;
-    int check_time_freq = 1;
-    const int num_time_sample = 100;
-
-    auto best_score = solution.score;
-
-    auto best_solution = solution;
-
-    auto init_time = time_keeper.get_elapsed_ratio();
-    /***************************************************************/
-
-    auto now_solution = solution;
-    auto now_score = best_score;
-    double crt_elapsed_ratio = time_keeper.get_elapsed_ratio();
-    int update_cnt = 0;
-    int improved_cnt = 0;
-
-    for (int lp = 0;; lp++) {
-      /*************************************************************/
-
-      // Update check_time_freq so that the exec time of check_time_freq times
-      // loop is check_time_elapsed_ratio
-      if (lp == num_time_sample) {
-        crt_elapsed_ratio = time_keeper.get_elapsed_ratio();
-        auto elapsed_ratio = max(crt_elapsed_ratio - init_time, 0.00001);
-        check_time_freq =
-            num_time_sample * check_time_elapsed_ratio / elapsed_ratio;
-        if (check_time_freq < 1) {
-          check_time_freq = 1;
-        }
-        if (check_time_freq > 500) {
-          check_time_freq = 500;
-        }
-        INFO_LOG("updated check_time_freq", check_time_freq, "elapsed_ratio",
-                 elapsed_ratio, "crt_elapsed_ratio", crt_elapsed_ratio);
-      }
-
-      if (lp % check_time_freq == 0) {
-
-        crt_elapsed_ratio = time_keeper.get_elapsed_ratio();
-
-        if (crt_elapsed_ratio >= over_ratio) {
-          INFO_LOG("#over", best_score, "lp", lp, "update", update_cnt,
-                   "improved", improved_cnt, "elapsed",
-                   time_keeper.get_elapsed_ms());
-          DEBUG_LOG("!D!", update_cnt);
-          solution = std::move(best_solution);
-          break;
-        }
-      }
-      // end of 3
-      /*************************************************************/
-
-      /*************************************************************/
-      auto elapsed_ratio =
-          (crt_elapsed_ratio - init_time) / ((over_ratio - init_time));
-      double temp = start_temp + (end_temp - start_temp) * elapsed_ratio;
-      double diff_threshold = temp * log(randf());
-      // end of 4
-      /************************************************************/
-
-      /*************************************************************/
-      auto next_score = calc_neighbor_ans(now_solution, now_score,
-                                          diff_threshold, crt_elapsed_ratio);
-      // end of 5
-      /*************************************************************/
-
-      /*************************************************************/
-      auto diff = next_score - now_score;
-      if (diff < diff_threshold) {
-        continue;
-      }
-      // DEBUG_LOG("next_score", next_score, "now_score", now_score);
-
-      now_score = next_score;
-      update_cnt++;
-
-      if (chmax(best_score, now_score)) {
-        best_solution = now_solution;
-        improved_cnt++;
-
-        DEBUG_LOG("update by annealing!!", best_score, "lp", lp, "update",
-                  update_cnt, "elapsed ratio", elapsed_ratio);
-        // dout << "update !! " << high_score << high_answer_ << endl;
-      }
-    }
-  }
-
-  Unit calc_neighbor_ans(Solution &solution, int score, double diff_threshold,
-                         double elapsed_ratio) {
-    // TODO
-    return -UINF;
-  }
+  int calc_score(Solution &sol) {}
 };
 
 int main() {
@@ -745,10 +391,6 @@ int main() {
   solver.solve(sol);
 
   cerr << "Score = " << sol.score << endl;
-
-  // INFO_LOG("!D!", M);
-  // INFO_LOG("!D!", L);
-
 #ifdef ATCODERDEBUG
 #endif
 }
