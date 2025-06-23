@@ -41,14 +41,6 @@ if [ -d "$ROOT_DIR/$PROBLEM_NAME" ]; then
     fi
 fi
 
-# get tool zip file from atcoder web page
-CONTEST_URL="https://atcoder.jp/contests/$PROBLEM_NAME/tasks/${PROBLEM_NAME}_a"
-TOOL_URL=$(curl -s "$CONTEST_URL" | grep -oP '(?<=<a href=")[^"]*(?=">Local version)' | head -n 1)
-if [ -z "$TOOL_URL" ]; then
-    echo "Error: Unable to find tool URL. Please check the contest URL."
-    exit 1
-fi
-
 # create ROOT_DIR/$PROBLEM_NAME
 mkdir -p "$ROOT_DIR/$PROBLEM_NAME"
 
@@ -63,18 +55,25 @@ if [ "$INTERACTIVE" = "yes" ]; then
 fi
 pahcer init -p "$PROBLEM_NAME" -o "$OBJECTIVE" -l "$LANGUAGE" $INTERACTIVE_FLAG
 
-# download tool zip file
-curl -L "$TOOL_URL" -o tool.zip
+# get tool zip file from atcoder web page
+CONTEST_URL="https://atcoder.jp/contests/$PROBLEM_NAME/tasks/${PROBLEM_NAME}_a"
+TOOL_URL=$(curl -s "$CONTEST_URL" | grep -oP '(?<=<a href=")[^"]*(?=">Local version)' | head -n 1)
+if [ -z "$TOOL_URL" ]; then
+    echo "Error: Unable to find tool URL. Please check the contest URL."
+else
+    # download tool zip file
+    curl -L "$TOOL_URL" -o tool.zip
 
-# unzip tool.zip
-unzip -o tool.zip
+    # unzip tool.zip
+    unzip -o tool.zip
 
-# remove tool.zip
-rm tool.zip
+    # remove tool.zip
+    rm tool.zip
 
-# make directory tools/out, tools/err
-mkdir -p tools/out
-mkdir -p tools/err
+    # make directory tools/out, tools/err
+    mkdir -p tools/out
+    mkdir -p tools/err
+fi
 
 # initialize git repository
 git init
