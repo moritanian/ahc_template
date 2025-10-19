@@ -263,6 +263,7 @@ struct Solver {
         continue;
       }
 
+      now_solution.score = next_score;
       now_score = next_score;
       update_cnt++;
 
