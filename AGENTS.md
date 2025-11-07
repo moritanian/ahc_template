@@ -8,7 +8,8 @@ rootの problem.md に解くべき問題が記載されている
 
 1. ユーザからの要求を聞く
 2. 必ずユーザの要求に不明点や問題点がないか確認し、あればユーザに尋ねる
-3. 不明点、問題点がすべてクリアになれば main.cpp を編集する
+3. 不明点、問題点がすべてクリアになれば main.cpp
+   を編集する。理解しやすいようにコード中に十分なコメントを必ずいれる。
 4. tasks.jsonの「pahcer run」タスクを実行してビルドとサンプルケースの実行を行う
    - run_vscode_command tool を使用して
      commandId="workbench.action.tasks.runTask", args=["pahcer run"] で実行
