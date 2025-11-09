@@ -3,3 +3,5 @@ tools
 rust
 a.out
 summary*.csv
+result.csv
+main
