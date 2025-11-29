@@ -5,3 +5,6 @@ a.out
 summary*.csv
 result.csv
 main
+pahcer-studio
+pahcer_config.toml.bak
+tool.zip
