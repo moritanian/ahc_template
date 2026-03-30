@@ -84,8 +84,3 @@ int main() {
 
   cerr << "Score = " << sol.score << endl;
 }
-
-/**
-pahcer run --setting-file pahcer_config_single.toml
-
- */
