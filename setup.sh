@@ -55,6 +55,20 @@ if [ "$INTERACTIVE" = "yes" ]; then
 fi
 pahcer init -p "$PROBLEM_NAME" -o "$OBJECTIVE" -l "$LANGUAGE" $INTERACTIVE_FLAG
 
+# For C++: insert combiner step before g++ compile step, and change g++ target to combined.cpp
+if [ "$LANGUAGE" = "cpp" ]; then
+    # 1. Add combiner step before the g++ compile step
+    sed -i '/^# Compile the user'\''s program$/i\
+# Combine source files\
+[[test.compile_steps]]\
+program = "./combiner.py"\
+args = ["main.cpp", "combined.cpp"]\
+' pahcer_config.toml
+
+    # 2. Change g++ compile target from main.cpp to combined.cpp (only in the g++ args line)
+    sed -i '/program = "g++"/,/^$/{s/"main\.cpp"/"combined.cpp"/}' pahcer_config.toml
+fi
+
 # get tool zip file from atcoder web page
 CONTEST_URL="https://atcoder.jp/contests/$PROBLEM_NAME/tasks/${PROBLEM_NAME}_a"
 TOOL_URL=$(curl -s "$CONTEST_URL" | grep -oP '(?<=<a href=")[^"]*(?=">Local version)' | head -n 1)
