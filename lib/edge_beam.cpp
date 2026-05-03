@@ -123,7 +123,8 @@ namespace edge_beam_library
         struct Config
         {
             int max_turn;
-            size_t beam_width;
+            size_t beam_width;          // 初期 beam_width
+            size_t max_beam_width = 0;  // 内部配列の確保サイズ (0 なら beam_width と同じ)
             size_t tour_capacity;
             uint32_t hash_map_capacity;
             // 実行可能解が見つかったらすぐに返すかどうか
@@ -131,6 +132,11 @@ namespace edge_beam_library
             // かつターン数最小化問題であればtrueにする。
             // そうでなければfalse
             bool return_finished_immediately;
+            // 時間制限チェック用コールバック (nullptr なら無制限)
+            // true を返すとその場で打ち切り、これまでの best を返す
+            function<bool()> is_time_over = nullptr;
+            // 動的 beam_width コールバック: 毎ターン呼ばれ、次のターンの beam_width を返す
+            function<size_t(int turn)> get_beam_width = nullptr;
         };
 
         // 展開するノードの候補を表す構造体
@@ -156,14 +162,21 @@ namespace edge_beam_library
             explicit Selector(const Config &config) : hash_to_index_(config.hash_map_capacity)
             {
                 beam_width = config.beam_width;
-                candidates_.reserve(beam_width);
+                max_beam_width_ = config.max_beam_width > 0 ? config.max_beam_width : config.beam_width;
+                candidates_.reserve(max_beam_width_);
                 full_ = false;
 
-                costs_.resize(beam_width);
-                for (size_t i = 0; i < beam_width; ++i)
+                costs_.resize(max_beam_width_);
+                for (size_t i = 0; i < max_beam_width_; ++i)
                 {
-                    costs_[i] = {0, i};
+                    costs_[i] = {0, (int)i};
                 }
+            }
+
+            // beam_width を動的に変更 (clear 後に呼ぶこと)
+            void set_beam_width(size_t new_bw)
+            {
+                beam_width = min(new_bw, max_beam_width_);
             }
 
             // 候補を追加する
@@ -177,7 +190,7 @@ namespace edge_beam_library
                     finished_candidates_.emplace_back(candidate);
                     return;
                 }
-                if (full_ && cost >= st_.all_prod().first)
+                if (full_ && cost >= st_.prod(0, beam_width).first)
                 {
                     // 保持しているどの候補よりもコストが小さくないとき
                     return;
@@ -214,7 +227,7 @@ namespace edge_beam_library
                 if (full_)
                 {
                     // segment treeが構築されている場合
-                    int j = st_.all_prod().second;
+                    int j = st_.prod(0, beam_width).second;
                     hash_to_index_.set(i, candidate.hash, j);
                     candidates_[j] = candidate;
                     st_.set(j, {cost, j});
@@ -314,6 +327,7 @@ namespace edge_beam_library
                 { return make_pair(numeric_limits<Cost>::min(), -1); }>;
 
             size_t beam_width;
+            size_t max_beam_width_;
             vector<Candidate> candidates_;
             HashMap<Hash, int> hash_to_index_;
             bool full_;
@@ -328,10 +342,11 @@ namespace edge_beam_library
         public:
             explicit Tree(const State<Selector> &state, const Config &config) : state_(state)
             {
+                size_t max_bw = config.max_beam_width > 0 ? config.max_beam_width : config.beam_width;
                 curr_tour_.reserve(config.tour_capacity);
                 next_tour_.reserve(config.tour_capacity);
-                leaves_.reserve(config.beam_width);
-                buckets_.assign(config.beam_width, {});
+                leaves_.reserve(max_bw);
+                buckets_.assign(max_bw, {});
             }
 
             // 状態を更新しながら深さ優先探索を行い、次のノードの候補を全てselectorに追加する
@@ -499,6 +514,12 @@ namespace edge_beam_library
             vector<Action> best_ret;
             for (int turn = 0; turn < config.max_turn; ++turn)
             {
+                // 時間制限チェック (is_time_over が設定されていれば)
+                if (config.is_time_over && config.is_time_over())
+                {
+                    return best_ret;
+                }
+
                 // Euler Tourでselectorに候補を追加する
                 tree.dfs(selector);
 
@@ -547,10 +568,16 @@ namespace edge_beam_library
                 tree.update(selector.select());
 
                 selector.clear();
+
+                // 動的 beam_width 調整
+                if (config.get_beam_width)
+                {
+                    size_t new_bw = config.get_beam_width(turn + 1);
+                    selector.set_beam_width(new_bw);
+                }
             }
 
-            assert(false);
-            return {};
+            return best_ret;
         }
 
         // StateConcept のチェックを構造体内で実施
@@ -576,13 +603,18 @@ namespace edge_beam_library
         struct Config
         {
             int max_turn;
-            size_t beam_width;
+            size_t beam_width;          // 初期 beam_width
+            size_t max_beam_width = 0;  // 内部配列の確保サイズ (0 なら beam_width と同じ)
             size_t tour_capacity;
             // 実行可能解が見つかったらすぐに返すかどうか
             // ビーム内のターンと問題文のターンが同じレイヤーで、
             // かつターン数最小化問題であればtrueにする。
             // そうでなければfalse
             bool return_finished_immediately;
+            // 時間制限チェック用コールバック (nullptr なら無制限)
+            function<bool()> is_time_over = nullptr;
+            // 動的 beam_width コールバック
+            function<size_t(int turn)> get_beam_width = nullptr;
         };
 
         // 展開するノードの候補を表す構造体
@@ -606,14 +638,21 @@ namespace edge_beam_library
             explicit Selector(const Config &config)
             {
                 beam_width = config.beam_width;
-                candidates_.reserve(beam_width);
+                max_beam_width_ = config.max_beam_width > 0 ? config.max_beam_width : config.beam_width;
+                candidates_.reserve(max_beam_width_);
                 full_ = false;
 
-                costs_.resize(beam_width);
-                for (size_t i = 0; i < beam_width; ++i)
+                costs_.resize(max_beam_width_);
+                for (size_t i = 0; i < max_beam_width_; ++i)
                 {
-                    costs_[i] = {0, i};
+                    costs_[i] = {0, (int)i};
                 }
+            }
+
+            // beam_width を動的に変更 (clear 後に呼ぶこと)
+            void set_beam_width(size_t new_bw)
+            {
+                beam_width = min(new_bw, max_beam_width_);
             }
 
             // 候補を追加する
@@ -627,7 +666,7 @@ namespace edge_beam_library
                     finished_candidates_.emplace_back(candidate);
                     return;
                 }
-                if (full_ && cost >= st_.all_prod().first)
+                if (full_ && cost >= st_.prod(0, beam_width).first)
                 {
                     // 保持しているどの候補よりもコストが小さくないとき
                     return;
@@ -635,7 +674,7 @@ namespace edge_beam_library
                 if (full_)
                 {
                     // segment treeが構築されている場合
-                    int j = st_.all_prod().second;
+                    int j = st_.prod(0, beam_width).second;
                     candidates_[j] = candidate;
                     st_.set(j, {cost, j});
                 }
@@ -732,6 +771,7 @@ namespace edge_beam_library
                 { return make_pair(numeric_limits<Cost>::min(), -1); }>;
 
             size_t beam_width;
+            size_t max_beam_width_;
             vector<Candidate> candidates_;
             bool full_;
             vector<pair<Cost, int>> costs_;
@@ -745,10 +785,11 @@ namespace edge_beam_library
         public:
             explicit Tree(const State<Selector> &state, const Config &config) : state_(state)
             {
+                size_t max_bw = config.max_beam_width > 0 ? config.max_beam_width : config.beam_width;
                 curr_tour_.reserve(config.tour_capacity);
                 next_tour_.reserve(config.tour_capacity);
-                leaves_.reserve(config.beam_width);
-                buckets_.assign(config.beam_width, {});
+                leaves_.reserve(max_bw);
+                buckets_.assign(max_bw, {});
             }
 
             // 状態を更新しながら深さ優先探索を行い、次のノードの候補を全てselectorに追加する
@@ -916,6 +957,12 @@ namespace edge_beam_library
             vector<Action> best_ret;
             for (int turn = 0; turn < config.max_turn; ++turn)
             {
+                // 時間制限チェック (is_time_over が設定されていれば)
+                if (config.is_time_over && config.is_time_over())
+                {
+                    return best_ret;
+                }
+
                 // Euler Tourでselectorに候補を追加する
                 tree.dfs(selector);
 
@@ -963,10 +1010,16 @@ namespace edge_beam_library
                 tree.update(selector.select());
 
                 selector.clear();
+
+                // 動的 beam_width 調整
+                if (config.get_beam_width)
+                {
+                    size_t new_bw = config.get_beam_width(turn + 1);
+                    selector.set_beam_width(new_bw);
+                }
             }
 
-            assert(false);
-            return {};
+            return best_ret;
         }
 
         // StateConcept のチェックを構造体内で実施
