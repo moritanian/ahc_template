@@ -1,20 +1,29 @@
 /**************************************************************/
-// Euler Tour の辺を保持する差分更新ビームサーチライブラリ
+// 差分更新ビームサーチライブラリ (rhoo方式 / post-order tree)
+// 履歴木 (各 turn の選択遷移を木で表現) を「葉ごとの post-order
+// Action 配列 + 葉境界」で持ち、move_forward/move_backward で
+// in-place に状態を差分更新する。
+// 前進辺/後退辺のマーカーを持たない点で eijirou方式 (Euler Tour
+// ベース) とは異なる。API は eijirou方式の従来版と互換。
+//   - dfs の per-entry 分岐除去 (forward walk: revert range → apply range)
+//   - tour エントリのスリム化 (Action 単体, type marker なし)
+//   - direct_road の LCA ベース一括抽出
+// を実現。
+//
 // Hashを用いた同一盤面除去をする場合は
 // Hash, Action, Cost, State を自分で定義、実装して
-// using BeamSearchUser = BeamSearch<Hash, Action, Cost, StateBase>;
+// using BeamSearchUser = EdgeBeamSearch<Hash, Action, Cost, StateBase>;
 // Hashの処理を記述するのが面倒な場合は
 // Action, Cost, State を自分で定義、実装して
-// using BeamSearchUser = BeamSearchNoHash<Action, Cost, StateBase>;
+// using BeamSearchUser = EdgeBeamSearchNoHash<Action, Cost, StateBase>;
 // と記述し、
 // BeamSearchUser beam_search;
 // を用いてビームサーチを実行する。
 // Action以外はそれぞれのconceptに準拠している必要がある。
 // テンプレートメタプログラミングによって実現しているので、
 // 抽象クラスを継承する場合と比べてオーバーヘッドがかからないはず。
-// eijirouさんの記事を参考にしているが、
-// Evaluatorを使っていないのでどこを変えるべきかがやや明確な気がする。
 // 参考: https://eijirou-kyopro.hatenablog.com/entry/2024/02/01/115639
+//       https://trap.jp/post/2920/
 // 要件
 // ac-liblrary: https://github.com/atcoder/ac-library
 // 推奨
@@ -62,14 +71,14 @@ namespace edge_beam_library
             {
                 if (data_[i].first == key)
                 {
-                    return {true, i};
+                    return {true, (int)i};
                 }
                 if (++i == n_)
                 {
                     i = 0;
                 }
             }
-            return {false, i};
+            return {false, (int)i};
         }
 
         // 指定したindexにkeyとvalueを格納する
@@ -128,14 +137,10 @@ namespace edge_beam_library
             size_t tour_capacity;
             uint32_t hash_map_capacity;
             // 実行可能解が見つかったらすぐに返すかどうか
-            // ビーム内のターンと問題文のターンが同じレイヤーで、
-            // かつターン数最小化問題であればtrueにする。
-            // そうでなければfalse
             bool return_finished_immediately;
             // 時間制限チェック用コールバック (nullptr なら無制限)
-            // true を返すとその場で打ち切り、これまでの best を返す
             function<bool()> is_time_over = nullptr;
-            // 動的 beam_width コールバック: 毎ターン呼ばれ、次のターンの beam_width を返す
+            // 動的 beam_width コールバック
             function<size_t(int turn)> get_beam_width = nullptr;
         };
 
@@ -180,8 +185,6 @@ namespace edge_beam_library
             }
 
             // 候補を追加する
-            // ターン数最小化型の問題で、candidateによって実行可能解が得られる場合にのみ finished = true とする
-            // ビーム幅分の候補をCandidateを追加したときにsegment treeを構築する
             void push(const Action &action, const Cost &cost, const Hash &hash, int parent, bool finished)
             {
                 Candidate candidate(action, cost, hash, parent);
@@ -192,7 +195,6 @@ namespace edge_beam_library
                 }
                 if (full_ && cost >= st_.prod(0, beam_width).first)
                 {
-                    // 保持しているどの候補よりもコストが小さくないとき
                     return;
                 }
                 auto [valid, i] = hash_to_index_.get_index(candidate.hash);
@@ -202,10 +204,8 @@ namespace edge_beam_library
                     int j = hash_to_index_.get(i);
                     if (candidate.hash == candidates_[j].hash)
                     {
-                        // ハッシュ値が等しいものが存在しているとき
                         if (full_)
                         {
-                            // segment treeが構築されている場合
                             if (cost < st_.get(j).first)
                             {
                                 candidates_[j] = candidate;
@@ -214,7 +214,6 @@ namespace edge_beam_library
                         }
                         else
                         {
-                            // segment treeが構築されていない場合
                             if (cost < costs_[j].first)
                             {
                                 candidates_[j] = candidate;
@@ -226,7 +225,6 @@ namespace edge_beam_library
                 }
                 if (full_)
                 {
-                    // segment treeが構築されている場合
                     int j = st_.prod(0, beam_width).second;
                     hash_to_index_.set(i, candidate.hash, j);
                     candidates_[j] = candidate;
@@ -234,7 +232,6 @@ namespace edge_beam_library
                 }
                 else
                 {
-                    // segment treeが構築されていない場合
                     int j = candidates_.size();
                     hash_to_index_.set(i, candidate.hash, j);
                     candidates_.emplace_back(candidate);
@@ -242,32 +239,16 @@ namespace edge_beam_library
 
                     if (candidates_.size() == beam_width)
                     {
-                        // 保持している候補がビーム幅分になったときにsegment treeを構築する
                         full_ = true;
                         st_ = MaxSegtree(costs_);
                     }
                 }
             }
 
-            // 選んだ候補を返す
-            const vector<Candidate> &select() const
-            {
-                return candidates_;
-            }
+            const vector<Candidate> &select() const { return candidates_; }
+            bool have_finished() const { return !finished_candidates_.empty(); }
+            vector<Candidate> get_finished_candidates() const { return finished_candidates_; }
 
-            // 実行可能解が見つかったか
-            bool have_finished() const
-            {
-                return !finished_candidates_.empty();
-            }
-
-            // 実行可能解に到達するCandidateを返す
-            vector<Candidate> get_finished_candidates() const
-            {
-                return finished_candidates_;
-            }
-
-            // 最もよいCandidateを返す
             Candidate calculate_best_candidate() const
             {
                 if (full_)
@@ -303,26 +284,13 @@ namespace edge_beam_library
                 full_ = false;
             }
 
-            void clear_finished_candidates()
-            {
-                finished_candidates_.clear();
-            }
+            void clear_finished_candidates() { finished_candidates_.clear(); }
 
         private:
-            // 削除可能な優先度付きキュー
             using MaxSegtree = atcoder::segtree<
                 pair<Cost, int>,
                 [](pair<Cost, int> a, pair<Cost, int> b)
-                {
-                    if (a.first >= b.first)
-                    {
-                        return a;
-                    }
-                    else
-                    {
-                        return b;
-                    }
-                },
+                { return a.first >= b.first ? a : b; },
                 []()
                 { return make_pair(numeric_limits<Cost>::min(), -1); }>;
 
@@ -336,167 +304,259 @@ namespace edge_beam_library
             vector<Candidate> finished_candidates_;
         };
 
-        // Euler Tourを管理するためのクラス
+        // 履歴木を post-order Action 配列で管理するクラス (rhoo方式)
+        // tour_   : post-order に並べた Action 配列 (各 leaf の LCA からの増分を連結)
+        // leaves_ : 境界配列。leaves_[i+1] - leaves_[i] = leaf i の LCA(i-1,i) からの descent 長
+        //           leaves_.size() = L + 1 (L は leaf 数)
+        // turn_   : direct_road_ の終端から現在の leaf 群までの深さ
+        // trace_indices_ : dfs/update walk 中の現在パスを tour_ への index で保持
+        // direct_road_   : 全 leaf 共通プレフィクス
         class Tree
         {
         public:
             explicit Tree(const State<Selector> &state, const Config &config) : state_(state)
             {
                 size_t max_bw = config.max_beam_width > 0 ? config.max_beam_width : config.beam_width;
-                curr_tour_.reserve(config.tour_capacity);
+                tour_.reserve(config.tour_capacity);
                 next_tour_.reserve(config.tour_capacity);
-                leaves_.reserve(max_bw);
-                buckets_.assign(max_bw, {});
+                leaves_.reserve(max_bw + 2);
+                next_leaves_.reserve(max_bw + 2);
+                trace_indices_.reserve(config.max_turn + 1);
+                cand_buckets_.assign(max_bw, {});
+                turn_ = 0;
+                leaves_.push_back(0);
             }
 
-            // 状態を更新しながら深さ優先探索を行い、次のノードの候補を全てselectorに追加する
+            // 状態を更新しながら leaf を順に訪問し、各 leaf で expand を呼ぶ
             void dfs(Selector &selector)
             {
-                if (curr_tour_.empty())
+                if (turn_ == 0)
                 {
-                    // 最初のターン
-                    auto [cost, hash] = state_.make_initial_node();
+                    // 最初のターン: 初期 state から expand
+                    state_.make_initial_node();
                     state_.expand(0, selector);
                     return;
                 }
+                int L = (int)leaves_.size() - 1;
+                if ((int)trace_indices_.size() < turn_)
+                    trace_indices_.assign(turn_, 0);
 
-                for (auto [leaf_index, action] : curr_tour_)
+                int curr_depth = 0;
+                for (int k = 0; k < L; k++)
                 {
-                    if (leaf_index >= 0)
+                    int range = leaves_[k + 1] - leaves_[k];
+                    // LCA(prev, k) の深さは turn_ - range なので、curr_depth - (turn_ - range) 個 revert
+                    int revert_amount = curr_depth - (turn_ - range);
+                    for (int i = 0; i < revert_amount; i++)
                     {
-                        // 葉
-                        state_.move_forward(action);
-                        auto &[cost, hash] = leaves_[leaf_index];
-                        state_.expand(leaf_index, selector);
-                        state_.move_backward(action);
+                        state_.move_backward(tour_[trace_indices_[curr_depth - 1 - i]]);
                     }
-                    else if (leaf_index == -1)
+                    curr_depth -= revert_amount;
+                    // tour_[leaves_[k] .. leaves_[k+1]] を順に apply
+                    for (int j = 0; j < range; j++)
                     {
-                        // 前進辺
-                        state_.move_forward(action);
+                        int ti = leaves_[k] + j;
+                        trace_indices_[curr_depth + j] = ti;
+                        state_.move_forward(tour_[ti]);
                     }
-                    else
-                    {
-                        // 後退辺
-                        state_.move_backward(action);
-                    }
+                    curr_depth = turn_;
+                    state_.expand(k, selector);
+                }
+                // root に戻す
+                for (int d = curr_depth - 1; d >= 0; d--)
+                {
+                    state_.move_backward(tour_[trace_indices_[d]]);
                 }
             }
 
-            // 木を更新する
+            // 木を更新する: candidates から次世代の tour/leaves を構築
             void update(const vector<Candidate> &candidates)
             {
-                leaves_.clear();
+                int L = (int)leaves_.size() - 1;
 
-                if (curr_tour_.empty())
+                // candidates を parent leaf 別にバケット
+                size_t needed = max((size_t)max(L, 1), (size_t)1);
+                if (cand_buckets_.size() < needed)
+                    cand_buckets_.resize(needed);
+                for (size_t i = 0; i < candidates.size(); i++)
                 {
-                    // 最初のターン
-                    for (const Candidate &candidate : candidates)
+                    cand_buckets_[candidates[i].parent].push_back((int)i);
+                }
+
+                next_tour_.clear();
+                next_leaves_.clear();
+                next_leaves_.push_back(0);
+
+                if (turn_ == 0)
+                {
+                    // 初期 expand 後: 全 cand は parent=0
+                    for (int cidx : cand_buckets_[0])
                     {
-                        curr_tour_.push_back({(int)leaves_.size(), candidate.action});
-                        leaves_.push_back({candidate.cost, candidate.hash});
+                        next_tour_.push_back(candidates[cidx].action);
+                        next_leaves_.push_back((int)next_tour_.size());
                     }
-                    return;
+                    cand_buckets_[0].clear();
                 }
-
-                for (const Candidate &candidate : candidates)
+                else
                 {
-                    buckets_[candidate.parent].push_back({candidate.action, candidate.cost, candidate.hash});
-                }
+                    if ((int)trace_indices_.size() < turn_)
+                        trace_indices_.assign(turn_, 0);
 
-                auto it = curr_tour_.begin();
+                    int curr_depth = 0;
+                    int prev_active_parent = -1;
+                    int max_range_since_prev_active = 0;
 
-                // 一本道を反復しないようにする
-                while (it->first == -1 && it->second == curr_tour_.back().second)
-                {
-                    Action action = (it++)->second;
-                    state_.move_forward(action);
-                    direct_road_.push_back(action);
-                    curr_tour_.pop_back();
-                }
-
-                // 葉の追加や不要な辺の削除をする
-                while (it != curr_tour_.end())
-                {
-                    auto [leaf_index, action] = *(it++);
-                    if (leaf_index >= 0)
+                    for (int k = 0; k < L; k++)
                     {
-                        // 葉
-                        if (buckets_[leaf_index].empty())
+                        int range = leaves_[k + 1] - leaves_[k];
+                        int revert_amount = curr_depth - (turn_ - range);
+                        for (int i = 0; i < revert_amount; i++)
                         {
+                            state_.move_backward(tour_[trace_indices_[curr_depth - 1 - i]]);
+                        }
+                        curr_depth -= revert_amount;
+                        for (int j = 0; j < range; j++)
+                        {
+                            int ti = leaves_[k] + j;
+                            trace_indices_[curr_depth + j] = ti;
+                            state_.move_forward(tour_[ti]);
+                        }
+                        curr_depth = turn_;
+
+                        // LCA(prev_active, k) の depth 計算用に max_range を更新
+                        if (prev_active_parent >= 0)
+                        {
+                            if (range > max_range_since_prev_active)
+                                max_range_since_prev_active = range;
+                        }
+
+                        if (cand_buckets_[k].empty())
                             continue;
-                        }
-                        next_tour_.push_back({-1, action});
-                        for (auto [new_action, cost, hash] : buckets_[leaf_index])
+
+                        // 新 leaf 群を発行
+                        int lca_depth;
+                        if (prev_active_parent < 0)
                         {
-                            int new_leaf_index = leaves_.size();
-                            next_tour_.push_back({new_leaf_index, new_action});
-                            leaves_.push_back({cost, hash});
-                        }
-                        buckets_[leaf_index].clear();
-                        next_tour_.push_back({-2, action});
-                    }
-                    else if (leaf_index == -1)
-                    {
-                        // 前進辺
-                        next_tour_.push_back({-1, action});
-                    }
-                    else
-                    {
-                        // 後退辺
-                        auto [old_leaf_index, old_action] = next_tour_.back();
-                        if (old_leaf_index == -1)
-                        {
-                            next_tour_.pop_back();
+                            lca_depth = 0; // 仮想 root
                         }
                         else
                         {
-                            next_tour_.push_back({-2, action});
+                            lca_depth = turn_ - max_range_since_prev_active;
                         }
+
+                        bool first = true;
+                        for (int cidx : cand_buckets_[k])
+                        {
+                            if (first)
+                            {
+                                // 最初の cand: LCA から現在 (turn_) までの trace + cand.action
+                                for (int d = lca_depth; d < turn_; d++)
+                                {
+                                    next_tour_.push_back(tour_[trace_indices_[d]]);
+                                }
+                                next_tour_.push_back(candidates[cidx].action);
+                                first = false;
+                            }
+                            else
+                            {
+                                // 同 parent の続き: cand.action のみ (LCA = parent 自身, depth turn_)
+                                next_tour_.push_back(candidates[cidx].action);
+                            }
+                            next_leaves_.push_back((int)next_tour_.size());
+                        }
+
+                        prev_active_parent = k;
+                        max_range_since_prev_active = 0;
+                        cand_buckets_[k].clear();
+                    }
+
+                    // root に戻す
+                    for (int d = curr_depth - 1; d >= 0; d--)
+                    {
+                        state_.move_backward(tour_[trace_indices_[d]]);
                     }
                 }
-                swap(curr_tour_, next_tour_);
-                next_tour_.clear();
+
+                int new_turn = turn_ + 1;
+
+                // direct_road 抽出: 全 leaf 共通プレフィクス = LCA(全 leaves) の深さ分
+                int newL = (int)next_leaves_.size() - 1;
+                if (newL > 0)
+                {
+                    int max_range_others = 0;
+                    for (int i = 1; i < newL; i++)
+                    {
+                        int r = next_leaves_[i + 1] - next_leaves_[i];
+                        if (r > max_range_others)
+                            max_range_others = r;
+                    }
+                    // newL == 1 の場合: 単一 leaf は全部 direct_road にできる
+                    int shared = new_turn - max_range_others;
+                    if (shared > 0)
+                    {
+                        for (int i = 0; i < shared; i++)
+                        {
+                            direct_road_.push_back(next_tour_[i]);
+                            state_.move_forward(next_tour_[i]);
+                        }
+                        // next_tour_ から先頭 shared 個を除去
+                        next_tour_.erase(next_tour_.begin(), next_tour_.begin() + shared);
+                        for (int i = 1; i < (int)next_leaves_.size(); i++)
+                        {
+                            next_leaves_[i] -= shared;
+                        }
+                        new_turn -= shared;
+                    }
+                }
+
+                swap(tour_, next_tour_);
+                swap(leaves_, next_leaves_);
+                turn_ = new_turn;
             }
 
             // 根からのパスを取得する
-            vector<Action> calculate_path(int parent, int turn) const
+            // parent_leaf は現在世代の leaf index
+            vector<Action> calculate_path(int parent_leaf, int turn_hint) const
             {
-                // cerr << curr_tour_.size() << endl;
+                vector<Action> ret;
+                ret.reserve((size_t)max(turn_hint, 0));
+                ret.insert(ret.end(), direct_road_.begin(), direct_road_.end());
 
-                vector<Action> ret = direct_road_;
-                ret.reserve(turn);
-                for (auto [leaf_index, action] : curr_tour_)
+                if (turn_ == 0)
                 {
-                    if (leaf_index >= 0)
-                    {
-                        if (leaf_index == parent)
-                        {
-                            ret.push_back(action);
-                            return ret;
-                        }
-                    }
-                    else if (leaf_index == -1)
-                    {
-                        ret.push_back(action);
-                    }
-                    else
-                    {
-                        ret.pop_back();
-                    }
+                    return ret;
                 }
 
-                assert(false);
-                return {};
+                // forward walk して parent_leaf 到達時の trace を構築
+                vector<int> trace_local(turn_, 0);
+                int curr_depth = 0;
+                for (int k = 0; k <= parent_leaf; k++)
+                {
+                    int range = leaves_[k + 1] - leaves_[k];
+                    curr_depth = turn_ - range;
+                    for (int j = 0; j < range; j++)
+                    {
+                        trace_local[curr_depth + j] = leaves_[k] + j;
+                    }
+                    curr_depth = turn_;
+                }
+                for (int d = 0; d < turn_; d++)
+                {
+                    ret.push_back(tour_[trace_local[d]]);
+                }
+                return ret;
             }
 
         private:
             State<Selector> state_;
-            vector<pair<int, Action>> curr_tour_;
-            vector<pair<int, Action>> next_tour_;
-            vector<pair<Cost, Hash>> leaves_;
-            vector<vector<tuple<Action, Cost, Hash>>> buckets_;
+            vector<Action> tour_;
+            vector<int> leaves_;
+            vector<int> trace_indices_;
             vector<Action> direct_road_;
+            vector<Action> next_tour_;
+            vector<int> next_leaves_;
+            vector<vector<int>> cand_buckets_;
+            int turn_;
         };
 
         // ビームサーチを行う関数
@@ -504,28 +564,21 @@ namespace edge_beam_library
         {
             Tree tree(state, config);
 
-            // 新しいノード候補の集合
             Selector selector(config);
 
-            // config.return_finished_immediately が false のときに、
-            // 実行可能解の中で一番よいものを覚えておくための変数
-            // ビームサーチ内で扱うturnと問題のturnが一致しないときに使う
             Cost best_cost = numeric_limits<Cost>::max();
             vector<Action> best_ret;
             for (int turn = 0; turn < config.max_turn; ++turn)
             {
-                // 時間制限チェック (is_time_over が設定されていれば)
                 if (config.is_time_over && config.is_time_over())
                 {
                     return best_ret;
                 }
 
-                // Euler Tourでselectorに候補を追加する
                 tree.dfs(selector);
 
                 if (selector.have_finished())
                 {
-                    // ターン数最小化型の問題で実行可能解が見つかったとき
                     if (config.return_finished_immediately)
                     {
                         Candidate candidate = selector.get_finished_candidates()[0];
@@ -552,24 +605,19 @@ namespace edge_beam_library
                 {
                     return best_ret;
                 }
-                assert(!selector.select().empty());
 
                 if (turn == config.max_turn - 1)
                 {
-                    assert(selector.select().empty());
-                    // ターン数固定型の問題で全ターンが終了したとき
                     Candidate best_candidate = selector.calculate_best_candidate();
                     vector<Action> ret = tree.calculate_path(best_candidate.parent, turn + 1);
                     ret.push_back(best_candidate.action);
                     return ret;
                 }
 
-                // 木を更新する
                 tree.update(selector.select());
 
                 selector.clear();
 
-                // 動的 beam_width 調整
                 if (config.get_beam_width)
                 {
                     size_t new_bw = config.get_beam_width(turn + 1);
@@ -580,7 +628,6 @@ namespace edge_beam_library
             return best_ret;
         }
 
-        // StateConcept のチェックを構造体内で実施
         static_assert(StateConcept<State<Selector>, Hash, Cost, Action, Selector>,
                       "State template must satisfy StateConcept with BeamSearch::Selector");
 
@@ -599,25 +646,17 @@ namespace edge_beam_library
     template <typename Action, CostConcept Cost, template <typename> class State>
     struct EdgeBeamSearchNoHash
     {
-        // ビームサーチの設定
         struct Config
         {
             int max_turn;
-            size_t beam_width;          // 初期 beam_width
-            size_t max_beam_width = 0;  // 内部配列の確保サイズ (0 なら beam_width と同じ)
+            size_t beam_width;
+            size_t max_beam_width = 0;
             size_t tour_capacity;
-            // 実行可能解が見つかったらすぐに返すかどうか
-            // ビーム内のターンと問題文のターンが同じレイヤーで、
-            // かつターン数最小化問題であればtrueにする。
-            // そうでなければfalse
             bool return_finished_immediately;
-            // 時間制限チェック用コールバック (nullptr なら無制限)
             function<bool()> is_time_over = nullptr;
-            // 動的 beam_width コールバック
             function<size_t(int turn)> get_beam_width = nullptr;
         };
 
-        // 展開するノードの候補を表す構造体
         struct Candidate
         {
             Action action;
@@ -629,9 +668,6 @@ namespace edge_beam_library
                                                               parent(parent) {}
         };
 
-        // ノードの候補から実際に追加するものを選ぶクラス
-        // ビーム幅の個数だけ、評価がよいものを選ぶ
-        // ハッシュ値が一致したものについては、評価がよいほうのみを残す
         class Selector
         {
         public:
@@ -649,15 +685,11 @@ namespace edge_beam_library
                 }
             }
 
-            // beam_width を動的に変更 (clear 後に呼ぶこと)
             void set_beam_width(size_t new_bw)
             {
                 beam_width = min(new_bw, max_beam_width_);
             }
 
-            // 候補を追加する
-            // ターン数最小化型の問題で、candidateによって実行可能解が得られる場合にのみ finished = true とする
-            // ビーム幅分の候補をCandidateを追加したときにsegment treeを構築する
             void push(const Action &action, const Cost &cost, int parent, bool finished)
             {
                 Candidate candidate(action, cost, parent);
@@ -668,51 +700,32 @@ namespace edge_beam_library
                 }
                 if (full_ && cost >= st_.prod(0, beam_width).first)
                 {
-                    // 保持しているどの候補よりもコストが小さくないとき
                     return;
                 }
                 if (full_)
                 {
-                    // segment treeが構築されている場合
                     int j = st_.prod(0, beam_width).second;
                     candidates_[j] = candidate;
                     st_.set(j, {cost, j});
                 }
                 else
                 {
-                    // segment treeが構築されていない場合
                     int j = candidates_.size();
                     candidates_.emplace_back(candidate);
                     costs_[j].first = cost;
 
                     if (candidates_.size() == beam_width)
                     {
-                        // 保持している候補がビーム幅分になったときにsegment treeを構築する
                         full_ = true;
                         st_ = MaxSegtree(costs_);
                     }
                 }
             }
 
-            // 選んだ候補を返す
-            const vector<Candidate> &select() const
-            {
-                return candidates_;
-            }
+            const vector<Candidate> &select() const { return candidates_; }
+            bool have_finished() const { return !finished_candidates_.empty(); }
+            vector<Candidate> get_finished_candidates() const { return finished_candidates_; }
 
-            // 実行可能解が見つかったか
-            bool have_finished() const
-            {
-                return !finished_candidates_.empty();
-            }
-
-            // 実行可能解に到達するCandidateを返す
-            vector<Candidate> get_finished_candidates() const
-            {
-                return finished_candidates_;
-            }
-
-            // 最もよいCandidateを返す
             Candidate calculate_best_candidate() const
             {
                 if (full_)
@@ -747,26 +760,13 @@ namespace edge_beam_library
                 full_ = false;
             }
 
-            void clear_finished_candidates()
-            {
-                finished_candidates_.clear();
-            }
+            void clear_finished_candidates() { finished_candidates_.clear(); }
 
         private:
-            // 削除可能な優先度付きキュー
             using MaxSegtree = atcoder::segtree<
                 pair<Cost, int>,
                 [](pair<Cost, int> a, pair<Cost, int> b)
-                {
-                    if (a.first >= b.first)
-                    {
-                        return a;
-                    }
-                    else
-                    {
-                        return b;
-                    }
-                },
+                { return a.first >= b.first ? a : b; },
                 []()
                 { return make_pair(numeric_limits<Cost>::min(), -1); }>;
 
@@ -779,196 +779,253 @@ namespace edge_beam_library
             vector<Candidate> finished_candidates_;
         };
 
-        // Euler Tourを管理するためのクラス
         class Tree
         {
         public:
             explicit Tree(const State<Selector> &state, const Config &config) : state_(state)
             {
                 size_t max_bw = config.max_beam_width > 0 ? config.max_beam_width : config.beam_width;
-                curr_tour_.reserve(config.tour_capacity);
+                tour_.reserve(config.tour_capacity);
                 next_tour_.reserve(config.tour_capacity);
-                leaves_.reserve(max_bw);
-                buckets_.assign(max_bw, {});
+                leaves_.reserve(max_bw + 2);
+                next_leaves_.reserve(max_bw + 2);
+                trace_indices_.reserve(config.max_turn + 1);
+                cand_buckets_.assign(max_bw, {});
+                turn_ = 0;
+                leaves_.push_back(0);
             }
 
-            // 状態を更新しながら深さ優先探索を行い、次のノードの候補を全てselectorに追加する
             void dfs(Selector &selector)
             {
-                if (curr_tour_.empty())
+                if (turn_ == 0)
                 {
-                    // 最初のターン
-                    auto cost = state_.make_initial_node();
+                    state_.make_initial_node();
                     state_.expand(0, selector);
                     return;
                 }
+                int L = (int)leaves_.size() - 1;
+                if ((int)trace_indices_.size() < turn_)
+                    trace_indices_.assign(turn_, 0);
 
-                for (auto [leaf_index, action] : curr_tour_)
+                int curr_depth = 0;
+                for (int k = 0; k < L; k++)
                 {
-                    if (leaf_index >= 0)
+                    int range = leaves_[k + 1] - leaves_[k];
+                    int revert_amount = curr_depth - (turn_ - range);
+                    for (int i = 0; i < revert_amount; i++)
                     {
-                        // 葉
-                        state_.move_forward(action);
-                        auto cost = leaves_[leaf_index];
-                        state_.expand(leaf_index, selector);
-                        state_.move_backward(action);
+                        state_.move_backward(tour_[trace_indices_[curr_depth - 1 - i]]);
                     }
-                    else if (leaf_index == -1)
+                    curr_depth -= revert_amount;
+                    for (int j = 0; j < range; j++)
                     {
-                        // 前進辺
-                        state_.move_forward(action);
+                        int ti = leaves_[k] + j;
+                        trace_indices_[curr_depth + j] = ti;
+                        state_.move_forward(tour_[ti]);
                     }
-                    else
-                    {
-                        // 後退辺
-                        state_.move_backward(action);
-                    }
+                    curr_depth = turn_;
+                    state_.expand(k, selector);
+                }
+                for (int d = curr_depth - 1; d >= 0; d--)
+                {
+                    state_.move_backward(tour_[trace_indices_[d]]);
                 }
             }
 
-            // 木を更新する
             void update(const vector<Candidate> &candidates)
             {
-                leaves_.clear();
+                int L = (int)leaves_.size() - 1;
 
-                if (curr_tour_.empty())
+                size_t needed = max((size_t)max(L, 1), (size_t)1);
+                if (cand_buckets_.size() < needed)
+                    cand_buckets_.resize(needed);
+                for (size_t i = 0; i < candidates.size(); i++)
                 {
-                    // 最初のターン
-                    for (const Candidate &candidate : candidates)
+                    cand_buckets_[candidates[i].parent].push_back((int)i);
+                }
+
+                next_tour_.clear();
+                next_leaves_.clear();
+                next_leaves_.push_back(0);
+
+                if (turn_ == 0)
+                {
+                    for (int cidx : cand_buckets_[0])
                     {
-                        curr_tour_.push_back({(int)leaves_.size(), candidate.action});
-                        leaves_.push_back(candidate.cost);
+                        next_tour_.push_back(candidates[cidx].action);
+                        next_leaves_.push_back((int)next_tour_.size());
                     }
-                    return;
+                    cand_buckets_[0].clear();
                 }
-
-                for (const Candidate &candidate : candidates)
+                else
                 {
-                    buckets_[candidate.parent].push_back({candidate.action, candidate.cost});
-                }
+                    if ((int)trace_indices_.size() < turn_)
+                        trace_indices_.assign(turn_, 0);
 
-                auto it = curr_tour_.begin();
+                    int curr_depth = 0;
+                    int prev_active_parent = -1;
+                    int max_range_since_prev_active = 0;
 
-                // 一本道を反復しないようにする
-                while (it->first == -1 && it->second == curr_tour_.back().second)
-                {
-                    Action action = (it++)->second;
-                    state_.move_forward(action);
-                    direct_road_.push_back(action);
-                    curr_tour_.pop_back();
-                }
-
-                // 葉の追加や不要な辺の削除をする
-                while (it != curr_tour_.end())
-                {
-                    auto [leaf_index, action] = *(it++);
-                    if (leaf_index >= 0)
+                    for (int k = 0; k < L; k++)
                     {
-                        // 葉
-                        if (buckets_[leaf_index].empty())
+                        int range = leaves_[k + 1] - leaves_[k];
+                        int revert_amount = curr_depth - (turn_ - range);
+                        for (int i = 0; i < revert_amount; i++)
                         {
+                            state_.move_backward(tour_[trace_indices_[curr_depth - 1 - i]]);
+                        }
+                        curr_depth -= revert_amount;
+                        for (int j = 0; j < range; j++)
+                        {
+                            int ti = leaves_[k] + j;
+                            trace_indices_[curr_depth + j] = ti;
+                            state_.move_forward(tour_[ti]);
+                        }
+                        curr_depth = turn_;
+
+                        if (prev_active_parent >= 0)
+                        {
+                            if (range > max_range_since_prev_active)
+                                max_range_since_prev_active = range;
+                        }
+
+                        if (cand_buckets_[k].empty())
                             continue;
-                        }
-                        next_tour_.push_back({-1, action});
-                        for (auto [new_action, cost] : buckets_[leaf_index])
+
+                        int lca_depth;
+                        if (prev_active_parent < 0)
                         {
-                            int new_leaf_index = leaves_.size();
-                            next_tour_.push_back({new_leaf_index, new_action});
-                            leaves_.push_back(cost);
-                        }
-                        buckets_[leaf_index].clear();
-                        next_tour_.push_back({-2, action});
-                    }
-                    else if (leaf_index == -1)
-                    {
-                        // 前進辺
-                        next_tour_.push_back({-1, action});
-                    }
-                    else
-                    {
-                        // 後退辺
-                        auto [old_leaf_index, old_action] = next_tour_.back();
-                        if (old_leaf_index == -1)
-                        {
-                            next_tour_.pop_back();
+                            lca_depth = 0;
                         }
                         else
                         {
-                            next_tour_.push_back({-2, action});
+                            lca_depth = turn_ - max_range_since_prev_active;
                         }
+
+                        bool first = true;
+                        for (int cidx : cand_buckets_[k])
+                        {
+                            if (first)
+                            {
+                                for (int d = lca_depth; d < turn_; d++)
+                                {
+                                    next_tour_.push_back(tour_[trace_indices_[d]]);
+                                }
+                                next_tour_.push_back(candidates[cidx].action);
+                                first = false;
+                            }
+                            else
+                            {
+                                next_tour_.push_back(candidates[cidx].action);
+                            }
+                            next_leaves_.push_back((int)next_tour_.size());
+                        }
+
+                        prev_active_parent = k;
+                        max_range_since_prev_active = 0;
+                        cand_buckets_[k].clear();
+                    }
+
+                    for (int d = curr_depth - 1; d >= 0; d--)
+                    {
+                        state_.move_backward(tour_[trace_indices_[d]]);
                     }
                 }
-                swap(curr_tour_, next_tour_);
-                next_tour_.clear();
+
+                int new_turn = turn_ + 1;
+
+                int newL = (int)next_leaves_.size() - 1;
+                if (newL > 0)
+                {
+                    int max_range_others = 0;
+                    for (int i = 1; i < newL; i++)
+                    {
+                        int r = next_leaves_[i + 1] - next_leaves_[i];
+                        if (r > max_range_others)
+                            max_range_others = r;
+                    }
+                    int shared = new_turn - max_range_others;
+                    if (shared > 0)
+                    {
+                        for (int i = 0; i < shared; i++)
+                        {
+                            direct_road_.push_back(next_tour_[i]);
+                            state_.move_forward(next_tour_[i]);
+                        }
+                        next_tour_.erase(next_tour_.begin(), next_tour_.begin() + shared);
+                        for (int i = 1; i < (int)next_leaves_.size(); i++)
+                        {
+                            next_leaves_[i] -= shared;
+                        }
+                        new_turn -= shared;
+                    }
+                }
+
+                swap(tour_, next_tour_);
+                swap(leaves_, next_leaves_);
+                turn_ = new_turn;
             }
 
-            // 根からのパスを取得する
-            vector<Action> calculate_path(int parent, int turn) const
+            vector<Action> calculate_path(int parent_leaf, int turn_hint) const
             {
-                // cerr << curr_tour_.size() << endl;
+                vector<Action> ret;
+                ret.reserve((size_t)max(turn_hint, 0));
+                ret.insert(ret.end(), direct_road_.begin(), direct_road_.end());
 
-                vector<Action> ret = direct_road_;
-                ret.reserve(turn);
-                for (auto [leaf_index, action] : curr_tour_)
+                if (turn_ == 0)
                 {
-                    if (leaf_index >= 0)
-                    {
-                        if (leaf_index == parent)
-                        {
-                            ret.push_back(action);
-                            return ret;
-                        }
-                    }
-                    else if (leaf_index == -1)
-                    {
-                        ret.push_back(action);
-                    }
-                    else
-                    {
-                        ret.pop_back();
-                    }
+                    return ret;
                 }
 
-                assert(false);
-                return {};
+                vector<int> trace_local(turn_, 0);
+                int curr_depth = 0;
+                for (int k = 0; k <= parent_leaf; k++)
+                {
+                    int range = leaves_[k + 1] - leaves_[k];
+                    curr_depth = turn_ - range;
+                    for (int j = 0; j < range; j++)
+                    {
+                        trace_local[curr_depth + j] = leaves_[k] + j;
+                    }
+                    curr_depth = turn_;
+                }
+                for (int d = 0; d < turn_; d++)
+                {
+                    ret.push_back(tour_[trace_local[d]]);
+                }
+                return ret;
             }
 
         private:
             State<Selector> state_;
-            vector<pair<int, Action>> curr_tour_;
-            vector<pair<int, Action>> next_tour_;
-            vector<Cost> leaves_;
-            vector<vector<tuple<Action, Cost>>> buckets_;
+            vector<Action> tour_;
+            vector<int> leaves_;
+            vector<int> trace_indices_;
             vector<Action> direct_road_;
+            vector<Action> next_tour_;
+            vector<int> next_leaves_;
+            vector<vector<int>> cand_buckets_;
+            int turn_;
         };
 
-        // ビームサーチを行う関数
         vector<Action> beam_search(const Config &config, const State<Selector> &state)
         {
             Tree tree(state, config);
-
-            // 新しいノード候補の集合
             Selector selector(config);
 
-            // config.return_finished_immediately が false のときに、
-            // 実行可能解の中で一番よいものを覚えておくための変数
-            // ビームサーチ内で扱うturnと問題のturnが一致しないときに使う
             Cost best_cost = numeric_limits<Cost>::max();
             vector<Action> best_ret;
             for (int turn = 0; turn < config.max_turn; ++turn)
             {
-                // 時間制限チェック (is_time_over が設定されていれば)
                 if (config.is_time_over && config.is_time_over())
                 {
                     return best_ret;
                 }
 
-                // Euler Tourでselectorに候補を追加する
                 tree.dfs(selector);
 
                 if (selector.have_finished())
                 {
-                    // ターン数最小化型の問題で実行可能解が見つかったとき
                     if (config.return_finished_immediately)
                     {
                         Candidate candidate = selector.get_finished_candidates()[0];
@@ -995,23 +1052,19 @@ namespace edge_beam_library
                 {
                     return best_ret;
                 }
-                assert(!selector.select().empty());
 
                 if (turn == config.max_turn - 1)
                 {
-                    // ターン数固定型の問題で全ターンが終了したとき
                     Candidate best_candidate = selector.calculate_best_candidate();
                     vector<Action> ret = tree.calculate_path(best_candidate.parent, turn + 1);
                     ret.push_back(best_candidate.action);
                     return ret;
                 }
 
-                // 木を更新する
                 tree.update(selector.select());
 
                 selector.clear();
 
-                // 動的 beam_width 調整
                 if (config.get_beam_width)
                 {
                     size_t new_bw = config.get_beam_width(turn + 1);
@@ -1022,12 +1075,11 @@ namespace edge_beam_library
             return best_ret;
         }
 
-        // StateConcept のチェックを構造体内で実施
         static_assert(StateConceptNoHash<State<Selector>, Cost, Action, Selector>,
                       "State template must satisfy StateConcept with BeamSearch::Selector");
 
     }; // EdgeBeamSearchNoHash
 
-} // namespace beam_search
+} // namespace edge_beam_library
 using namespace edge_beam_library;
 #endif
